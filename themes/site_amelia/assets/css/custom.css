@@ -1,0 +1,15 @@
+.code {
+  background: #a9dbd9; }
+
+body {
+  font-size: 16px;
+  line-height: 1.3; }
+
+p {
+  margin-bottom: 16px; }
+
+.container-fluid {
+  margin-top: 10px; }
+
+div.postbox h1 h2 h3 h4 h5 h6 h7 {
+  font-family: "Cabin", Verdana, sans-serif; }

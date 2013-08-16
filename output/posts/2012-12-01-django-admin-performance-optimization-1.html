@@ -1,0 +1,158 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta charset="utf-8"><meta name="description" content="如何帮 Django Admin 做性能优化"><meta name="author" content="Your Name"><title>"Django Admin 的性能优化一" | Demo Site</title><link href="../assets/css/bootstrap.min.css" rel="stylesheet" type="text/css"><link href="../assets/css/bootstrap-responsive.min.css" rel="stylesheet" type="text/css"><link href="../assets/css/rst.css" rel="stylesheet" type="text/css"><link href="../assets/css/code.css" rel="stylesheet" type="text/css"><link href="../assets/css/colorbox.css" rel="stylesheet" type="text/css"><link href="../assets/css/theme.css" rel="stylesheet" type="text/css"><link href="../assets/css/custom.css" rel="stylesheet" type="text/css"><!--[if lt IE 9]>
+      <script src="http://html5shim.googlecode.com/svn/trunk/html5.js" type="text/javascript"></script>
+    <![endif]--><link rel="alternate" type="application/rss+xml" title="RSS" href="../rss.xml"><meta name="keywords" content="django, 性能优化, admin"></head><body>
+<!-- Menubar -->
+<div class="navbar navbar-fixed-top">
+    <div class="navbar-inner">
+        <div class="container">
+
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+        </a>
+
+            <a class="brand" href="../">
+            Demo Site
+            </a>
+            <!-- Everything you want hidden at 940px or less, place within here -->
+            <div class="nav-collapse collapse">
+                <ul class="nav"><li><a href="../archive.html">Archives</a>
+            </li><li><a href="../categories/index.html">Tags</a>
+            </li><li><a href="../rss.xml">RSS</a>
+
+                </li></ul><ul class="nav pull-right"><li>
+    <a href="2012-12-01-django-admin-performance-optimization-1.markdown" id="sourcelink">Source</a>
+    </li>
+
+                </ul></div>
+        </div>
+    </div>
+</div>
+<!-- End of Menubar -->
+<div class="container-fluid" id="container-fluid">
+    <!--Body content-->
+    <div class="row-fluid">
+    <div class="span2"></div>
+    <div class="span8">
+    
+    <div class="postbox">
+    
+    <h1>"Django Admin 的性能优化一"</h1>
+
+    <hr><small>
+        Posted: <time class="published" datetime="2012-12-01T15:35:00">2012-12-01 15:35</time></small>
+    <hr><blockquote>
+<p>Django Admin 让程序猿不写太多代码就生产一功能基本齐备的后端，确实是很好很强大的。但很好很强大的工具也通常比较笨，会有多余操作，导致性能不大好。优化本来应针对业务，尽量不要去碰后台管理的优化，除非真的很闲。
+然而，Admin 真的是慢得让开发人员也无法忍受，一个页面产生500条语句，耗时十几秒，所以忍不住要去改改。在某些项目，Admin 页面就是产品的正式后端管理工具，那部分是有企业客户用的。如果想顺利收到钱，不想被xxoo的话，也有优化 Admin 的需要。</p>
+</blockquote>
+<h3>问题：List 页面当使用到外键产生过多的查询</h3>
+<p>select_related 可以设置为 True。 因为 Django ORM 默认是 Lazy Load 的，通常外键的属性不会在产生 List 结果的 QuerySet 里头被装载，而要等到你调用其属性了才会装载。
+譬如有一个 Model 叫 Blog，有一个外键 Author。</p>
+<div class="code"><pre><span class="k">class</span> <span class="nc">Author</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">first_name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Charfield</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+    <span class="n">last_name</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Charfield</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">64</span><span class="p">)</span>
+    <span class="n">email</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Charfield</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">255</span><span class="p">)</span>
+    <span class="o">...</span>
+    <span class="o">...</span>
+
+<span class="k">class</span> <span class="nc">Blog</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">title</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Charfield</span><span class="p">(</span><span class="n">max_length</span><span class="o">=</span><span class="mi">1024</span><span class="p">)</span>
+    <span class="n">content</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">TextField</span><span class="p">()</span>
+    <span class="n">author</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="n">Author</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">author_name</span><span class="p">():</span>
+        <span class="k">return</span> <span class="s">'</span><span class="si">%s</span><span class="s"> </span><span class="si">%s</span><span class="s">'</span> <span class="o">%</span> <span class="p">(</span><span class="n">author</span><span class="o">.</span><span class="n">first_name</span><span class="p">,</span> <span class="n">author</span><span class="o">.</span><span class="n">last_name</span><span class="p">)</span>
+</pre></div>
+
+
+<p>然后你希望在 Admin list 里头见到 Author 通常这么做：</p>
+<div class="code"><pre><span class="k">class</span> <span class="nc">BlogAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">'id'</span><span class="p">,</span> <span class="s">'title'</span><span class="p">,</span> <span class="s">'author_name'</span><span class="p">)</span>
+</pre></div>
+
+
+<p>这个时候，如果调用 Admin 的 Blog 的 list page 通常产生 100 条以上查询语句。因为 author_name 方法会引用到外键`对象 author ，而 Admin list 分页默认是 100 条记录为一个分页。
+100 条查询语句，现在的机器那么牛，实在不能算什么。而如果你有 n 个外键需要被显示，就会产 n * 100 条语句，而且他们都是串行执行的，因为是 Lazy 装载，而在 Template 里头是逐个被显示出来。。。</p>
+<p>解决办法就是让 BlogAdmin 在产生 queryset 的时候对外键 Author 产生 JOIN 。
+注意，上面的代码里，Blog.author 这个field 因为没设置 null=True，因此会产生 INNER JOIN，反之产生 LEFT OUTER JOIN，因为 author 可为空。</p>
+<h3>解决：办法有二</h3>
+<p>1). 修改 BlogAdmin 的 select_related 开关。</p>
+<div class="code"><pre><span class="k">class</span> <span class="nc">BlogAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">select_related</span> <span class="o">=</span> <span class="bp">True</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">'id'</span><span class="p">,</span> <span class="s">'title'</span><span class="p">,</span> <span class="s">'author_name'</span><span class="p">)</span>
+    <span class="o">...</span>
+</pre></div>
+
+
+<p>这个办法的好处就是简单，缺点是不够灵活。因为这个会把 Blog 所有的外键都 JOIN 进来，不管他们是否在 list_display 里头设置了。</p>
+<p>2). 重载 Admin 的 queryset 方法。</p>
+<div class="code"><pre><span class="k">class</span> <span class="nc">BlogAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">list_display</span> <span class="o">=</span> <span class="p">(</span><span class="s">'id'</span><span class="p">,</span> <span class="s">'title'</span><span class="p">,</span> <span class="s">'author_name'</span><span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BlogAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">queryset</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">select_related</span><span class="p">(</span><span class="s">'author'</span><span class="p">)</span>
+        <span class="k">return</span> <span class="n">qs</span>
+
+    <span class="o">...</span>
+</pre></div>
+
+
+<p>在此你可以显式指定那些外键需要被重载。不仅如此，select_related 还允许继续将外键的外键级联叠加进来。
+譬如：</p>
+<div class="code"><pre><span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">select_related</span><span class="p">(</span><span class="s">'author'</span><span class="p">,</span> <span class="s">'author__nationality'</span><span class="p">)</span>
+</pre></div>
+
+
+<p>上面的例子是不仅连 author 会 join，连 nationality 也会被 join 。
+虽然没有做过实验，但是猜测应该是可以无限级联下去。
+因为 author 已经是外键了，所以 select_related 中可以将 author 参数去掉，简写成如下：</p>
+<div class="code"><pre><span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">select_related</span><span class="p">(</span><span class="s">'author__nationality'</span><span class="p">)</span>
+</pre></div>
+    
+    <ul class="pager"><li class="previous">
+            <a href="2012-12-01-django-admin-performance-optimization-2.html">← Previous post</a>
+        </li>
+        <li class="next">
+            <a href="2012-12-12-emailyu-yu-ming-de-pei-zhi.html">Next post →</a>
+        </li>
+    </ul><div id="disqus_thread"></div>
+        <script type="text/javascript">
+        var disqus_shortname ="nikolademo";
+            var disqus_url="http://nikola.ralsina.com.ar/posts/2012-12-01-django-admin-performance-optimization-1.html";
+        var disqus_title="\"Django Admin \u7684\u6027\u80fd\u4f18\u5316\u4e00\"";
+        var disqus_identifier="cache/posts/2012-12-01-django-admin-performance-optimization-1.html";
+        var disqus_config = function () {
+            this.language = "en";
+        };
+        (function() {
+            var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+            dsq.src = 'http://' + disqus_shortname + '.disqus.com/embed.js';
+            (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+    </script><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+    <a href="http://disqus.com" class="dsq-brlink">Comments powered by <span class="logo-disqus">Disqus</span></a>
+
+    
+
+    </div>
+
+    </div>
+    </div>
+    <!--End of body content-->
+</div>
+<div class="footerbox">
+    Contents © 2013         <a href="mailto:joe@demo.site">Your Name</a> - Powered by         <a href="http://nikola.ralsina.com.ar">Nikola</a>         
+</div>
+
+    <!-- Social buttons -->
+    <div id="addthisbox" class="addthis_toolbox addthis_peekaboo_style addthis_default_style addthis_label_style addthis_32x32_style">
+    <a class="addthis_button_more">Share</a>
+    <ul><li><a class="addthis_button_facebook"></a>
+    </li><li><a class="addthis_button_google_plusone_share"></a>
+    </li><li><a class="addthis_button_linkedin"></a>
+    </li><li><a class="addthis_button_twitter"></a>
+    </li></ul></div>
+    <script type="text/javascript" src="//s7.addthis.com/js/300/addthis_widget.js#pubid=ra-4f7088a56bb93798"></script><!-- End of social buttons --><script src="../assets/js/jquery-1.7.2.min.js" type="text/javascript"></script><script src="../assets/js/bootstrap.min.js" type="text/javascript"></script><script src="../assets/js/jquery.colorbox-min.js" type="text/javascript"></script><script type="text/javascript">jQuery("a.image-reference").colorbox({rel:"gal",maxWidth:"100%",maxHeight:"100%",scalePhotos:true});</script></body></html>

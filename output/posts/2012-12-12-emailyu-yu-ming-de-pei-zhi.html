@@ -1,0 +1,176 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta charset="utf-8"><meta name="description" content="如何做邮件相关的域名配置。如何配置 SPF DKIM。"><meta name="author" content="Your Name"><title>"Email 与域名的配置 (SPF / DKIM)" | Demo Site</title><link href="../assets/css/bootstrap.min.css" rel="stylesheet" type="text/css"><link href="../assets/css/bootstrap-responsive.min.css" rel="stylesheet" type="text/css"><link href="../assets/css/rst.css" rel="stylesheet" type="text/css"><link href="../assets/css/code.css" rel="stylesheet" type="text/css"><link href="../assets/css/colorbox.css" rel="stylesheet" type="text/css"><link href="../assets/css/theme.css" rel="stylesheet" type="text/css"><link href="../assets/css/custom.css" rel="stylesheet" type="text/css"><!--[if lt IE 9]>
+      <script src="http://html5shim.googlecode.com/svn/trunk/html5.js" type="text/javascript"></script>
+    <![endif]--><link rel="alternate" type="application/rss+xml" title="RSS" href="../rss.xml"><meta name="keywords" content="email, DKIM, SPF, 邮件, mx, mta, 配置"></head><body>
+<!-- Menubar -->
+<div class="navbar navbar-fixed-top">
+    <div class="navbar-inner">
+        <div class="container">
+
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+        </a>
+
+            <a class="brand" href="../">
+            Demo Site
+            </a>
+            <!-- Everything you want hidden at 940px or less, place within here -->
+            <div class="nav-collapse collapse">
+                <ul class="nav"><li><a href="../archive.html">Archives</a>
+            </li><li><a href="../categories/index.html">Tags</a>
+            </li><li><a href="../rss.xml">RSS</a>
+
+                </li></ul><ul class="nav pull-right"><li>
+    <a href="2012-12-12-emailyu-yu-ming-de-pei-zhi.markdown" id="sourcelink">Source</a>
+    </li>
+
+                </ul></div>
+        </div>
+    </div>
+</div>
+<!-- End of Menubar -->
+<div class="container-fluid" id="container-fluid">
+    <!--Body content-->
+    <div class="row-fluid">
+    <div class="span2"></div>
+    <div class="span8">
+    
+    <div class="postbox">
+    
+    <h1>"Email 与域名的配置 (SPF / DKIM)"</h1>
+
+    <hr><small>
+        Posted: <time class="published" datetime="2012-12-12T21:30:00">2012-12-12 21:30</time></small>
+    <hr><p>长久以来都积压了不少 email 跟域名的疑问。纸上得来终觉浅，最近终于有时间集中将这些东西捋一下，具体实战一下。理清一些思路，有了更好的理解。</p>
+<h4>第一点域名上的 MX 配置主要是用来收信的。</h4>
+<p>譬如某个仁兄(foo@example.com) 要往 abc@keyonly.com 发信，这个仁兄的 MTU（就是 Postfix 或者 Sendmail ）首先向 keyonly.com 的 域名服务器查询 keyonly.com 的 MX 记录。  <br>
+譬如查到 MX 记录指向 mail.keyonly.com ，example.com MTU 就会向 mail.keyonly.com 的 MTA 发送 SMTP 请求 （现在流行 ESMTP ）进行投递。</p>
+<p>发 email 第一步解决了，知道信要往哪一个邮局发去，即往收件人的域名地址的 MX 记录上指向的机器发去。  <br>
+问题又来了，如何确认发信人的身份呢？</p>
+<h4>通过 SPF 跟 DKIM 确认发信人的身份</h4>
+<p>SMTP 协议允许任何计算机以任何源地址发邮件。因此有很多专门做垃圾邮件的人以伪装邮件的方式来发信。要解决这个问题，还是通过域名。</p>
+<blockquote>
+<ol><li>SPF 是用于验证发件人地址是否被某个域认可，即 <strong>mailed-by</strong>；    </li>
+<li>DomainKey/DKIM 用来验证邮件内容是否被某个域认可，即 <strong>signed-by</strong>。</li>
+</ol></blockquote>
+<h4>1.) SPF</h4>
+<p>SPF 实质是通过域名服务器向外中提供一个 Outbound MTA 白名单列表。</p>
+<p>举一具体例子。</p>
+<p>这些信息可以通过 dig 命令获取。</p>
+<div class="code"><pre><span class="n">dig</span> <span class="n">TXT</span> <span class="n">keyonly</span><span class="p">.</span><span class="n">com</span>
+</pre></div>
+
+
+<div class="code"><pre><span class="p">;;</span> <span class="n">ANSWER</span> <span class="n">SECTION</span><span class="o">:</span>
+<span class="n">keyonly</span><span class="p">.</span><span class="n">com</span><span class="p">.</span>        <span class="mi">86360</span>   <span class="n">IN</span>  <span class="n">TXT</span> <span class="s">"v=spf1 include:_spf.google.com ~all"</span>
+</pre></div>
+
+
+<p>这是 keyonly.com 的配置，相对简单，仅仅允许 _spf.google.com，其他都会 softfail 掉 (~all)。 
+如果配置为：</p>
+<div class="code"><pre><span class="p">;;</span> <span class="n">ANSWER</span> <span class="n">SECTION</span><span class="o">:</span>
+<span class="n">keyonly</span><span class="p">.</span><span class="n">com</span><span class="p">.</span>        <span class="mi">86360</span>   <span class="n">IN</span>  <span class="n">TXT</span> <span class="s">"v=spf1 a mx include:_spf.google.com include:sendgrid.net ~all"</span>
+</pre></div>
+
+
+<p>就是还允许 keyonly.com 的所有 a 记录跟 mx 记录，_spf.google.com 和 sendgrid.net 。</p>
+<p>spf 配置，可以很灵活，很强大，详细请看这里：
+http://www.openspf.org/SPF_Record_Syntax</p>
+<h4>2.) DKIM</h4>
+<p>DKIM 跟 DomainKey 有点大同小异，都是在 MTA （注意，这个是 Outbound MTA）发信时，对邮件进行签名。私钥由 Outbound MTA 保管着，不对外公开，公钥就放在域名的 TXT 项目上。接收方要验证信息的签名，可根据邮件上提供的信息，构造出含有公钥信息的域名地址，去该地址获取公钥。</p>
+<p>对据说 DomainKey 是 Yahoo 发明的，是 DKIM 前身。貌似 DKIM 更强大，更流行。具体那个地方强大，请自己狗一下。而 Google app 也支持 DKIM。</p>
+<p>注意，是签名，而不是加密。签名就是暗示着对邮件体的 Digest 通过私钥进行加密。Inbound MTA 在接收时候，就会从发件人域名服务器上查到公钥信息，然后对签名信息进行解密。如果解密得出的 Digest 值跟计算出来的一致，那证明邮件的合法性。</p>
+<p>譬如我有某个从 keyonly.com 发出来的 email，其 DKIM 签名如下：</p>
+<div class="code"><pre><span class="n">DKIM</span><span class="o">-</span><span class="n">Signature</span><span class="o">:</span> <span class="n">v</span><span class="o">=</span><span class="mi">1</span><span class="p">;</span> <span class="n">a</span><span class="o">=</span><span class="n">rsa</span><span class="o">-</span><span class="n">sha256</span><span class="p">;</span> <span class="n">c</span><span class="o">=</span><span class="n">relaxed</span><span class="o">/</span><span class="n">relaxed</span><span class="p">;</span>
+        <span class="n">d</span><span class="o">=</span><span class="n">keyonly</span><span class="p">.</span><span class="n">com</span><span class="p">;</span> <span class="n">s</span><span class="o">=</span><span class="n">google</span><span class="p">;</span>
+        <span class="n">h</span><span class="o">=</span><span class="n">mime</span><span class="o">-</span><span class="n">version</span><span class="o">:</span><span class="n">x</span><span class="o">-</span><span class="n">originating</span><span class="o">-</span><span class="n">ip</span><span class="o">:</span><span class="n">date</span><span class="o">:</span><span class="n">message</span><span class="o">-</span><span class="n">id</span><span class="o">:</span><span class="n">subject</span><span class="o">:</span><span class="n">from</span><span class="o">:</span><span class="n">to</span>
+         <span class="o">:</span><span class="n">content</span><span class="o">-</span><span class="n">type</span><span class="p">;</span>
+        <span class="n">bh</span><span class="o">=</span><span class="n">EVanec6ZKH</span><span class="o">/</span><span class="n">vkbb95pMLG07OuPp</span><span class="o">+</span><span class="n">QtQ3z71oXKCTejw</span><span class="o">=</span><span class="p">;</span>
+        <span class="n">b</span><span class="o">=</span><span class="n">E02Fj</span><span class="o">/</span><span class="n">ROj18sLVc395zPdCTRu1L8Gsie63QG</span><span class="o">+</span><span class="n">tF4PoeS7z3Yzvn7m2zWArjQfaVN51</span>
+         <span class="n">hSLE7jXRm1S5y4uaZboO2jRy9stCeikZ5xs</span><span class="o">/</span><span class="mi">38</span><span class="n">MrDZGh8IlkrUHySouHeqmdh5epwugT</span>
+         <span class="n">riTKjLMUF9t4YNO75i14mptgphw</span><span class="o">/</span><span class="mi">7</span><span class="n">VNP2tjTY</span><span class="o">=</span>
+</pre></div>
+
+
+<p>d=keyonly.com; s=google
+重新构造出 DKIM 信息的域名：</p>
+<div class="code"><pre><span class="cp">${</span><span class="n">s</span><span class="cp">}</span>._domainkey.<span class="cp">${</span><span class="n">d</span><span class="cp">}</span>
+</pre></div>
+
+
+<p>即：</p>
+<div class="code"><pre><span class="n">google</span><span class="p">.</span><span class="n">_domainkey</span><span class="p">.</span><span class="n">keyonly</span><span class="p">.</span><span class="n">com</span>
+</pre></div>
+
+
+<p>所以我们可以通过 dig 获取 这个 DKIM 的公钥：</p>
+<div class="code"><pre><span class="n">dig</span> <span class="n">TXT</span> <span class="n">google</span><span class="p">.</span><span class="n">_domainkey</span><span class="p">.</span><span class="n">keyonly</span><span class="p">.</span><span class="n">com</span>
+</pre></div>
+
+
+<div class="code"><pre><span class="n">google</span><span class="p">.</span><span class="n">_domainkey</span><span class="p">.</span><span class="n">keyonly</span><span class="p">.</span><span class="n">com</span><span class="p">.</span> <span class="mi">86400</span> <span class="n">IN</span> <span class="n">TXT</span> <span class="s">"v=DKIM1\; k=rsa\; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCF33Yl1sVLxLcS5UYUDdctOv2pdbaiYm1FRdSFzjvtO1b05zeXMJWKzXpGqpqh3i9sNNosrfmGKjjp/v+mklihVJUv7gRy/SyHg1WI8zRZNGfBtS0rE4s+jGeqtI2B2s4anJ0fcsps7N0kYjArBPCrv7LspPnCnHn6bggJZXjsGwIDAQAB"</span>
+</pre></div>
+
+
+<p>一个域名上允许多个 DKIM 公钥。因为 DKIM 签名上的 s 项只要不重复就好了，所以我们完全可以有</p>
+<ul><li>google._domain.keyonly.com  =&gt; google app 的 dkim</li>
+<li>sendgrid._domain.keyonly.com =&gt; sendgrid 的 dkim</li>
+<li>postfix._domain.keyonly.com  =&gt; 我的 postfix 的 dkim</li>
+</ul><h4>3）SPF 跟 DKIM 的结合使用</h4>
+<p>SPF 跟 DKIM 完全可以绑定到不同域名上。譬如说，从 keyonly.com 发出来的 email 不用必须是用 keyonly.com 签名的，完全可以是其他域名签名的。</p>
+<p>譬如说，我收到 NAB 银行的 email 签名的就是 Ubank (Ubank 是 NAB 的一个子银行)。感觉是他们    共用某些 IT 构架所导致的。</p>
+<h3>后记</h3>
+<ul><li>配置的时候牵涉到 DNS 设置，可以通过 dig 命令来获取 DNS 信息。  </li>
+<li>而 gmail 允许的一些特性会另调试变得简单：<ul><li>signed by, mailed by （对着收件人按右键）。</li>
+<li>show original 会显示邮件的原始信息。</li>
+</ul></li>
+</ul><p>一般大的 email 服务器会要求 SPF / DKIM 至少有一样；否则被 SPAM 几率就会增加。</p>
+<p>实际上有很多大公司大机构，都不一定将这个问题处理得很好。譬如 NAB （National Australia Bank） 的 email 就连 SPF 都没有设置，虽然有设置 DKIM，但却用的是自己子银行 Ubank 的。严格来说，这不是一个金融公司专业的 IT 表现。实际上 NAB 前段还专门发信通知大家小心被钓鱼邮件骗。如果它能一早就做好 SPF / DKIM ，应该可以提高犯罪分子的作案难度，减少出现问题的机会。</p>
+<p>而这点 CBA 就比 NAB 做得好多了，SPF / DKIM 都正确设置了，感觉比较专业。</p>
+    
+    <ul class="pager"><li class="previous">
+            <a href="2012-12-01-django-admin-performance-optimization-1.html">← Previous post</a>
+        </li>
+        <li class="next">
+            <a href="2012-12-30-you-jian-wang-jia-wei-dong-xie-xi-du.html">Next post →</a>
+        </li>
+    </ul><div id="disqus_thread"></div>
+        <script type="text/javascript">
+        var disqus_shortname ="nikolademo";
+            var disqus_url="http://nikola.ralsina.com.ar/posts/2012-12-12-emailyu-yu-ming-de-pei-zhi.html";
+        var disqus_title="\"Email \u4e0e\u57df\u540d\u7684\u914d\u7f6e (SPF / DKIM)\"";
+        var disqus_identifier="cache/posts/2012-12-12-emailyu-yu-ming-de-pei-zhi.html";
+        var disqus_config = function () {
+            this.language = "en";
+        };
+        (function() {
+            var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+            dsq.src = 'http://' + disqus_shortname + '.disqus.com/embed.js';
+            (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+    </script><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+    <a href="http://disqus.com" class="dsq-brlink">Comments powered by <span class="logo-disqus">Disqus</span></a>
+
+    
+
+    </div>
+
+    </div>
+    </div>
+    <!--End of body content-->
+</div>
+<div class="footerbox">
+    Contents © 2013         <a href="mailto:joe@demo.site">Your Name</a> - Powered by         <a href="http://nikola.ralsina.com.ar">Nikola</a>         
+</div>
+
+    <!-- Social buttons -->
+    <div id="addthisbox" class="addthis_toolbox addthis_peekaboo_style addthis_default_style addthis_label_style addthis_32x32_style">
+    <a class="addthis_button_more">Share</a>
+    <ul><li><a class="addthis_button_facebook"></a>
+    </li><li><a class="addthis_button_google_plusone_share"></a>
+    </li><li><a class="addthis_button_linkedin"></a>
+    </li><li><a class="addthis_button_twitter"></a>
+    </li></ul></div>
+    <script type="text/javascript" src="//s7.addthis.com/js/300/addthis_widget.js#pubid=ra-4f7088a56bb93798"></script><!-- End of social buttons --><script src="../assets/js/jquery-1.7.2.min.js" type="text/javascript"></script><script src="../assets/js/bootstrap.min.js" type="text/javascript"></script><script src="../assets/js/jquery.colorbox-min.js" type="text/javascript"></script><script type="text/javascript">jQuery("a.image-reference").colorbox({rel:"gal",maxWidth:"100%",maxHeight:"100%",scalePhotos:true});</script></body></html>

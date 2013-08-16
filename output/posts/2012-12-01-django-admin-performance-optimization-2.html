@@ -1,0 +1,176 @@
+<!DOCTYPE html><html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta charset="utf-8"><meta name="description" content="如何帮 Django Admin 做性能优化"><meta name="author" content="Your Name"><title>"Django Admin 的性能优化二" | Demo Site</title><link href="../assets/css/bootstrap.min.css" rel="stylesheet" type="text/css"><link href="../assets/css/bootstrap-responsive.min.css" rel="stylesheet" type="text/css"><link href="../assets/css/rst.css" rel="stylesheet" type="text/css"><link href="../assets/css/code.css" rel="stylesheet" type="text/css"><link href="../assets/css/colorbox.css" rel="stylesheet" type="text/css"><link href="../assets/css/theme.css" rel="stylesheet" type="text/css"><link href="../assets/css/custom.css" rel="stylesheet" type="text/css"><!--[if lt IE 9]>
+      <script src="http://html5shim.googlecode.com/svn/trunk/html5.js" type="text/javascript"></script>
+    <![endif]--><link rel="alternate" type="application/rss+xml" title="RSS" href="../rss.xml"><meta name="keywords" content="django, 性能优化, admin, queryset"></head><body>
+<!-- Menubar -->
+<div class="navbar navbar-fixed-top">
+    <div class="navbar-inner">
+        <div class="container">
+
+        <!-- .btn-navbar is used as the toggle for collapsed navbar content -->
+        <a class="btn btn-navbar" data-toggle="collapse" data-target=".nav-collapse">
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+        </a>
+
+            <a class="brand" href="../">
+            Demo Site
+            </a>
+            <!-- Everything you want hidden at 940px or less, place within here -->
+            <div class="nav-collapse collapse">
+                <ul class="nav"><li><a href="../archive.html">Archives</a>
+            </li><li><a href="../categories/index.html">Tags</a>
+            </li><li><a href="../rss.xml">RSS</a>
+
+                </li></ul><ul class="nav pull-right"><li>
+    <a href="2012-12-01-django-admin-performance-optimization-2.markdown" id="sourcelink">Source</a>
+    </li>
+
+                </ul></div>
+        </div>
+    </div>
+</div>
+<!-- End of Menubar -->
+<div class="container-fluid" id="container-fluid">
+    <!--Body content-->
+    <div class="row-fluid">
+    <div class="span2"></div>
+    <div class="span8">
+    
+    <div class="postbox">
+    
+    <h1>"Django Admin 的性能优化二"</h1>
+
+    <hr><small>
+        Posted: <time class="published" datetime="2012-12-01T15:35:00">2012-12-01 15:35</time></small>
+    <hr><blockquote>
+<p>Django Admin 让程序猿不写太多代码就生产一功能基本齐备的后端，确实是很好很强大的。但很好很强大的工具也通常比较笨，会有多余操作，导致性能不大好。优化本来应针对业务，尽量不要去碰后台管理的优化，除非真的很闲。
+然而，Admin 真的是慢得让开发人员也无法忍受，一个页面产生500条语句，耗时十几秒，所以忍不住要去改改。在某些项目，Admin 页面就是产品的正式后端管理工具，那部分是有企业客户用的。如果想顺利收到钱，不想被xxoo的话，也有优化 Admin 的需要。</p>
+</blockquote>
+<h3>问题：List 页面当外键需要做聚合查询统计的时候</h3>
+<p>请想象你要做一个电子商务的拍卖，有如下这两个类：
+一个 Product 可以有多个 Bid。典型的 1-n 关系，Product 是 Bid 的外键。</p>
+<div class="code"><pre><span class="k">class</span> <span class="nc">Product</span><span class="p">:</span>
+    <span class="o">...</span>
+
+    <span class="k">def</span> <span class="nf">bid_count</span><span class="p">():</span>
+        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">bids</span><span class="o">.</span><span class="n">count</span><span class="p">()</span>
+
+    <span class="k">def</span> <span class="nf">bid_accepted</span><span class="p">():</span>
+        <span class="k">return</span> <span class="bp">True</span> <span class="k">if</span> <span class="bp">self</span><span class="o">.</span><span class="n">bids</span><span class="o">.</span><span class="n">filter</span><span class="p">(</span><span class="n">accepted</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span><span class="o">.</span><span class="n">count</span><span class="p">()</span> <span class="o">&gt;</span> <span class="mi">0</span> <span class="k">else</span> <span class="bp">False</span>
+
+
+<span class="k">class</span> <span class="nc">Bid</span><span class="p">(</span><span class="n">models</span><span class="o">.</span><span class="n">Model</span><span class="p">):</span>
+    <span class="n">accepted</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">Boolean</span><span class="p">(</span><span class="n">null</span><span class="o">=</span><span class="bp">True</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="bp">None</span><span class="p">)</span>
+    <span class="n">product</span> <span class="o">=</span> <span class="n">models</span><span class="o">.</span><span class="n">ForeignKey</span><span class="p">(</span><span class="n">Product</span><span class="p">)</span>
+    <span class="o">...</span>
+</pre></div>
+
+
+<p>很简单很直观吧。好了，然后你有这样一个 admin，问题就来了 。。。</p>
+<div class="code"><pre><span class="k">class</span> <span class="nc">ProductAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">display_list</span> <span class="o">=</span> <span class="p">(</span><span class="s">'id'</span><span class="p">,</span> <span class="s">'bid_count'</span><span class="p">,</span> <span class="s">'bid_accepted'</span><span class="p">,</span> <span class="o">...</span> <span class="p">)</span>
+</pre></div>
+
+
+<p>通过 select_related 搞定了其他的外键，但就是 bid_count 搞不定啊，而 bid_count 跟 bid_accepted 每个就引起一次 sql 查询，一个 Admin 的 list 页面 200 条 SQL 呢。  <br>
+山穷水复疑无路，柳暗花明又一村。  <br>
+重载 Admin 的 queryset 方法，搞定了 bid_count:</p>
+<div class="code"><pre><span class="k">class</span> <span class="nc">ProductAdmin</span><span class="p">(</span><span class="n">admin</span><span class="o">.</span><span class="n">ModelAdmin</span><span class="p">):</span>
+    <span class="n">display_list</span> <span class="o">=</span> <span class="p">(</span><span class="s">'id'</span><span class="p">,</span> <span class="s">'bid_count'</span><span class="p">,</span> <span class="s">'bid_accepted'</span><span class="p">,</span> <span class="o">...</span> <span class="p">)</span>
+
+    <span class="k">def</span> <span class="nf">queryset</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">request</span><span class="p">):</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="nb">super</span><span class="p">(</span><span class="n">BlogAdmin</span><span class="p">,</span> <span class="bp">self</span><span class="p">)</span><span class="o">.</span><span class="n">queryset</span><span class="p">()</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">select_related</span><span class="p">(</span> <span class="o">...</span><span class="p">)</span> <span class="c"># 这里去搞定其他外键</span>
+        <span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">bid_count</span> <span class="o">=</span> <span class="n">Count</span><span class="p">(</span><span class="n">bids</span><span class="p">))</span>
+        <span class="k">return</span> <span class="n">qs</span>
+</pre></div>
+
+
+<p>好的这个 annotate 下去，搞定了 100 条 SQL，结果还剩下 100 条呢，bid_accepted 可以搞定么？？  <br>
+所以很自然就想到如下的语句</p>
+<div class="code"><pre><span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">annotate</span><span class="p">(</span><span class="n">bid_count</span><span class="o">=</span><span class="n">Count</span><span class="p">(</span><span class="n">bids</span><span class="p">,</span> <span class="n">bids__accepted</span><span class="o">=</span><span class="bp">True</span><span class="p">))</span>
+</pre></div>
+
+
+<p>生成的 sql 如下：</p>
+<div class="code"><pre> <span class="k">SELECT</span> <span class="o">*</span><span class="p">,</span>
+     <span class="k">COUNT</span><span class="p">(</span><span class="o">`</span><span class="n">bid</span><span class="o">`</span><span class="p">.</span><span class="o">`</span><span class="n">id</span><span class="o">`</span><span class="p">)</span> <span class="k">AS</span> <span class="o">`</span><span class="n">bid_count</span><span class="o">`</span><span class="p">,</span> 
+     <span class="k">COUNT</span><span class="p">(</span><span class="o">`</span><span class="n">bid</span><span class="o">`</span><span class="p">.</span><span class="o">`</span><span class="n">id</span><span class="o">`</span><span class="p">)</span> <span class="k">AS</span> <span class="o">`</span><span class="n">bid_accepted</span><span class="o">`</span> <span class="k">FROM</span> 
+         <span class="o">`</span><span class="n">product</span><span class="o">`</span> <span class="k">LEFT</span> <span class="k">OUTER</span> <span class="k">JOIN</span> <span class="o">`</span><span class="n">bid</span><span class="o">`</span> <span class="k">ON</span> <span class="p">(</span><span class="o">`</span><span class="n">product</span><span class="o">`</span><span class="p">.</span><span class="o">`</span><span class="n">id</span><span class="o">`</span> <span class="o">=</span> <span class="o">`</span><span class="n">bid</span><span class="o">`</span><span class="p">.</span><span class="o">`</span><span class="n">product_id</span><span class="o">`</span><span class="p">)</span> 
+         <span class="k">GROUP</span> <span class="k">BY</span> 
+            <span class="n">product</span><span class="p">.</span><span class="o">*</span> <span class="c1">-- 懒得写了，反正就是 product 的每一项。</span>
+</pre></div>
+
+
+<p>显然，这并非我们想要的，bid_accepted 也丢失了。</p>
+<p>经过一番摸索，我发现了 queryset 还有一个很好很强大的 extra 功能，允许我们嵌入子查询所以将代码改成如下：</p>
+<div class="code"><pre><span class="n">qs</span> <span class="o">=</span> <span class="n">qs</span><span class="o">.</span><span class="n">extra</span><span class="p">({</span>
+    <span class="s">'bid_count'</span><span class="p">:</span> <span class="s">'SELECT COUNT(*) FROM bid </span><span class="se">\</span>
+<span class="s">        WHERE product.id = bid.product_id and bid.accepted=1'</span><span class="p">,</span>
+
+    <span class="s">'bid_accepted'</span><span class="p">:</span> <span class="s">'SELECT COUNT(*) FROM bid</span><span class="se">\</span>
+<span class="s">        WHERE product.id = bid.submission_id and haggler_bid.accepted=1'</span><span class="p">,</span>
+<span class="p">})</span>
+</pre></div>
+
+
+<p>生成 SQL 如下</p>
+<div class="code"><pre><span class="k">SELECT</span> 
+    <span class="p">(</span><span class="k">SELECT</span> <span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span> <span class="k">FROM</span> <span class="n">bid</span> <span class="k">WHERE</span> <span class="n">product</span><span class="p">.</span><span class="n">id</span> <span class="o">=</span> <span class="n">bid</span><span class="p">.</span><span class="n">product_id</span><span class="p">)</span> <span class="k">AS</span> <span class="o">`</span><span class="n">bid_count</span><span class="o">`</span><span class="p">,</span> 
+    <span class="p">(</span><span class="k">SELECT</span> <span class="k">COUNT</span><span class="p">(</span><span class="o">*</span><span class="p">)</span> <span class="k">FROM</span> <span class="n">bid</span> <span class="k">WHERE</span> <span class="n">product</span><span class="p">.</span><span class="n">id</span> <span class="o">=</span> <span class="n">bid</span><span class="p">.</span><span class="n">product_id</span> <span class="k">and</span> <span class="n">bid</span><span class="p">.</span><span class="n">accepted</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> 
+        <span class="k">AS</span> <span class="o">`</span><span class="n">bid_accepted</span><span class="o">`</span><span class="p">,</span> 
+    <span class="n">product</span><span class="p">.</span><span class="o">*</span>
+         <span class="k">FROM</span> <span class="n">product</span> <span class="k">ORDER</span> <span class="k">BY</span> <span class="n">product</span><span class="p">.</span><span class="n">id</span> <span class="k">DESC</span> <span class="k">LIMIT</span> <span class="mi">100</span>
+</pre></div>
+
+
+<p>正是鄙人想要的~ :)。</p>
+<p>从 Django Debug Tool 上看到的查询语句数马上降低为 3 条，查询时间也降低到 35ms 内，耗时仅为优化前的 1/10 多一些。<br>
+即使这条查询语句含有子查询，但也总比100多200条查询好多了！</p>
+<p>其实这个 extra 完全可以自定制 product 的 model manager 里头，不过项目刚上手，还不是很熟悉，还是先不冒险了。</p>
+    
+    <ul class="pager"><li class="previous">
+            <a href="2012-11-27-auto-deployment-with-fabric.html">← Previous post</a>
+        </li>
+        <li class="next">
+            <a href="2012-12-01-django-admin-performance-optimization-1.html">Next post →</a>
+        </li>
+    </ul><div id="disqus_thread"></div>
+        <script type="text/javascript">
+        var disqus_shortname ="nikolademo";
+            var disqus_url="http://nikola.ralsina.com.ar/posts/2012-12-01-django-admin-performance-optimization-2.html";
+        var disqus_title="\"Django Admin \u7684\u6027\u80fd\u4f18\u5316\u4e8c\"";
+        var disqus_identifier="cache/posts/2012-12-01-django-admin-performance-optimization-2.html";
+        var disqus_config = function () {
+            this.language = "en";
+        };
+        (function() {
+            var dsq = document.createElement('script'); dsq.type = 'text/javascript'; dsq.async = true;
+            dsq.src = 'http://' + disqus_shortname + '.disqus.com/embed.js';
+            (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        })();
+    </script><noscript>Please enable JavaScript to view the <a href="http://disqus.com/?ref_noscript">comments powered by Disqus.</a></noscript>
+    <a href="http://disqus.com" class="dsq-brlink">Comments powered by <span class="logo-disqus">Disqus</span></a>
+
+    
+
+    </div>
+
+    </div>
+    </div>
+    <!--End of body content-->
+</div>
+<div class="footerbox">
+    Contents © 2013         <a href="mailto:joe@demo.site">Your Name</a> - Powered by         <a href="http://nikola.ralsina.com.ar">Nikola</a>         
+</div>
+
+    <!-- Social buttons -->
+    <div id="addthisbox" class="addthis_toolbox addthis_peekaboo_style addthis_default_style addthis_label_style addthis_32x32_style">
+    <a class="addthis_button_more">Share</a>
+    <ul><li><a class="addthis_button_facebook"></a>
+    </li><li><a class="addthis_button_google_plusone_share"></a>
+    </li><li><a class="addthis_button_linkedin"></a>
+    </li><li><a class="addthis_button_twitter"></a>
+    </li></ul></div>
+    <script type="text/javascript" src="//s7.addthis.com/js/300/addthis_widget.js#pubid=ra-4f7088a56bb93798"></script><!-- End of social buttons --><script src="../assets/js/jquery-1.7.2.min.js" type="text/javascript"></script><script src="../assets/js/bootstrap.min.js" type="text/javascript"></script><script src="../assets/js/jquery.colorbox-min.js" type="text/javascript"></script><script type="text/javascript">jQuery("a.image-reference").colorbox({rel:"gal",maxWidth:"100%",maxHeight:"100%",scalePhotos:true});</script></body></html>
